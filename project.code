@@ -1,0 +1,108 @@
+include Expression.incl  
+
+<**********TOKENS***********>
+
+<define BACKTRACK TRUE/>
+<define TOKEN (("=""=") ("<""=") (">""=") ("!""=") ("+""=") ("-""=") ("&""&") ("|""|") ("*""/") CODE.FLOAT)/>
+<define VAR_DECL CODE.BaseTypeVarDeclStmt/>
+<define DECLARATION VAR_DECL/>
+<code DeclStmtList parse=LIST(GLOBAL.DECLARATION,"\n")/>
+<define PARSE CODE.FirstStart/>
+
+<code FirstStart pars=(variable:DeclStmtList|"",stmt:LIST(CODE.Stmtstmt,"\n"),f:CODE.FunctionDefinition|"")> @variable@ @stmt@ @f@</code>
+
+<**************************Variable Declaration********************>
+
+<define C_TYPE_BASE CODE.IntType | CODE.FloatType />
+<define TYPE_BASE C_TYPE_BASE />
+<code BaseType parse = TYPE_BASE />
+<code IntType pars = (name:"int" | "unsigned" | "long") rebuild = name > @name@ </code>
+<code FloatType pars = (name:"float" | "double") rebuild = name> @name@ </code>
+<code ArrayDim pars = (dim:ID|INT)> [@dim@] </code>
+<code ArrayDimList pars = (dimension:LIST1(ArrayDim,"")) rebuild=dimension>
+@dimension@
+</code>
+
+<code BaseTypeVarDeclStmt pars = (type:CODE.Type1, var:CODE.VariableListStmt) > @type@ @var@ </code>
+<code TypeInfo pars = (type:CODE.BaseType, name:ID)> @type@ @name@ </code>
+<code Type1 pars = (base:CODE.BaseType) rebuild = (base)> @base@ </code>
+<code VariableListStmt pars = (content:CODE.VariableList) rebuild = content> @content@; </code>
+
+<code VariableList parse=LIST(CODE.VariableWithAnnot,",") />
+<code VariableWithAnnot pars=(name: ID, annot2: CODE.ArrayAnnot|"")>
+@name annot2@
+</code>
+
+<code ArrayAnnot pars=(dim:CODE.ArrayDimList|"") rebuild=dim > 
+@dim@
+</code>
+
+<*************************If-Else*********************************>
+
+<code Ifelsestmt pars=(head:CODE.ExpStmts|"", body:CODE.Stmtstmt|"", nested:CODE.NestedLoop|"")>
+if ( @head@ ) @body@ @nested@
+</code>
+
+<code NestedLoop pars=(elsepart:Stmtstmt|"")>
+else @elsepart@
+</code>
+
+
+<*************************For***********************************>
+
+<code Forstmt pars=(head1:CODE.ExpStmts|"",head2:CODE.ExpStmts|"",head3:CODE.ExpStmts|"",bodyd:CODE.Stmtstmt|"")>
+for ( @head1@ ; @head2@ ; @head3@ ) @bodyd@
+</code>
+
+<*************************While*********************************>
+
+<code Whilestmt pars=(headd:CODE.ExpStmts|"",bodyd:CODE.Stmtstmt|"")>
+while ( @headd@ ) @bodyd@
+</code>
+
+<**************************Statements***************************>
+
+<code StmtBlock pars=(stmt:CODE.Statements)>
+{ @stmt@ }
+</code>
+
+<code Statements pars=(stmt:LIST(CODE.Stmtstmt,"\n")|LIST(CODE.FunctionDefinition,"\n")) rebuild=(stmt)>
+@stmt@
+</code>
+
+<code Stmtstmt pars=(content:CODE.StmtBlock|CODE.ExpStmt|CODE.Semi|CODE.Ifelsestmt|CODE.Whilestmt|CODE.Forstmt|CODE.BaseTypeVarDeclStmt) rebuild=(content)>
+@content@
+</code>
+
+<**************************** Expressions *********************>
+
+<code ExpStmts pars=(exp:EXP) > @exp@ </code>
+<code ExpStmt pars=(exp:EXP) > @exp@; </code>
+<code Semi pars=(st:";")> @st@ </code>
+
+<*********************Base Expressions*************************>
+
+<define EXP_BASE FLOAT|INT|CODE.VarRef />
+<define EXP_BOP ( ("?" ":") ("=" "+=" "-=" "*=" "/=" "%=") ("&" "|") ("&&" "||") ("==" ">=" "<=" "!=" ">" "<") ("+" "-") ("*" "%" "/") ("." "->") ) />
+<define EXP_UOP ("++" "--" "*" "&" "~" "!" "+" "-" "new")/>
+
+<code VarRef pars=(name:ID, uop:"++"|"--"|"")
+             rebuild=((uop=="")?name:VarRef#(name,uop)) >
+@name uop@
+</code>
+
+<***********************Function Handling***********************>
+
+<code FunctionDefinition pars=(returntype:IntType|FloatType, name:Name, params: CODE.FunctionParameter, body:CODE.StmtBlock, extra:CODE.FirstStart) >
+@returntype@ @name@ @params@ @body@ @extra@
+</code>
+<code FunctionParameter pars=(content:CODE.ParamDeclList)> 
+(@content@)
+</code>
+<code ParamDeclList parse = LIST(CODE.VarDecl,",")/>
+<code VarDecl pars = (t:CODE.BaseType, v:CODE.VariableWithAnnot)>
+@t v@
+</code>
+
+
+

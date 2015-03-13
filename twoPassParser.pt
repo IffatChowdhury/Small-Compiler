@@ -1,0 +1,435 @@
+include utils.incl
+
+<parameter inputFile />
+<parameter syntaxFile />
+<input to=inputCode from=inputFile syntax=syntaxFile/> 
+<eval PRINT "PARSING SUCCESSFUL"/>
+<eval PRINT inputCode/> 
+
+<eval index = 0; check = ""; table = MAP(STRING,STRING);/>
+<xform scanFirstStart />
+<xform scan />
+<xform ParameterCheck/>
+<xform BuildBasicBlocks />
+<xform BuildCFG />
+<xform MapSuccessors/>
+
+<eval scanFirstStart(inputCode, table, index, check);
+PRINT table;
+PRINT ("SUCCESSFULLY BUILD AST");
+/>
+<<*blocks = BuildBasicBlocks(inputCode);
+<<*PRINT blocks;
+<<*(cfg,_) = BuildCFG(inputCode, blocks); 
+<<*PRINT cfg;
+<<*res = MapSuccessors(cfg);
+<<*PRINT res;
+<<*/>
+
+
+<*********************Check type of variables**************************************************>
+
+<xform typeChecking pars = (exp, table, index, check) >
+	typeReturn = "";
+	existing = "";
+	switch (exp)
+	{
+		case CODE.Uop#(op, opd) :
+			if (op == "!")
+			{
+				typeChecking(opd, table, index, check);
+				typeReturn = "int";
+                        }
+			else if (op == "-" || op == "+")
+			{
+				typeReturn = typeChecking(opd, table, index, check);				
+			}
+
+		case CODE.Bop#(op, opd1, opd2) :
+			if (op == "=")
+			{
+				number1 = typeChecking(opd1, table, index, check);
+				number2 = typeChecking(opd2, table, index, check);
+				if (number1 == "int" && number2 == "int")
+				 	typeReturn = "int";
+				else if (number1 == "float" && number2 == "float")
+				 	typeReturn = "float";
+				else 
+					ERROR("Type Mismatch");
+ 			}
+
+			if (op == "||" || op == "&&")
+			{
+				number1 = typeChecking(opd1, table, index, check);
+				number2 = typeChecking(opd2, table, index, check);
+				if (number1 == "int" && number2 == "int")
+					typeReturn = "int";
+				else
+					ERROR("Type Mismatch");
+			} 
+
+			if (op == "+" || op == "-" || op == "/" || op == "*")
+			{
+				number1 = typeChecking(opd1, table, index, check);
+				number2 = typeChecking(opd2, table, index, check);
+				if (number1 == "int" && number2 == "int")
+					typeReturn = "int";
+				else if (number1 == "float" && number2 == "float")
+					typeReturn = "float";
+	                        else
+					ERROR("Type Mismatch");
+			}
+
+			if (op == "<" || op == ">" || op == "==")
+			{
+				number1 = typeChecking(opd1, table, index, check);
+				number2 = typeChecking(opd2, table, index, check);
+				if (number1 == "int" && number2 == "int")
+					typeReturn = "int";
+				else if (number1 == "float" && number2 == "float")
+					typeReturn = "int";
+	                        else
+					ERROR("Type Mismatch");
+			}
+
+		case CODE.FunctionCall#(function, args) :
+			for (i = index; i >= 0; i = i - 1)
+			{
+				var = function ^ "-FunctionName-InnerIndex(" ^ i ^ ")-";
+				existing = table[var];
+			if (existing != "")
+				typeReturn = existing;
+			}
+			if (typeReturn == "")
+				ERROR("Function Does Not Exists------->  "^function);
+			
+		case CODE.ArrayAccess#(array, subscript) :
+			for (i = subscript; i != ""; i = TAIL(i))
+			{
+				sub = typeChecking(HEAD(i), table, index, check);
+				if (sub != "int")
+					ERROR ("Array Index "^HEAD(i)" Cannot be a Floating Point Number");
+			}
+			number1 = typeChecking(array, table, index, check);
+			if (number1 == "int")
+				typeReturn = "int";
+			if (number1 == "float")
+				typeReturn = "float";
+
+		case CODE.StmtBlock#(stmt) :
+			for (i = stmt; i !=""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index + 1, check);
+			}
+
+		case INT :
+			typeReturn = "int";
+	
+		case CODE.Semi#(st):
+			"";
+
+		case CODE.FLOAT#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT1#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT2#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT3#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT4#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT5#(content) : 
+			typeReturn = "float";
+
+		case CODE.FLOAT6#(content) : 
+			typeReturn = "float";
+		
+		case CODE.FLOAT7#(content) : 
+			typeReturn = "float";
+
+		default : 
+			for (i = index; i >= 0; i = i - 1)
+			{
+				var = exp ^ "-InnerIndex(" ^ i ^ ")-";
+				existing = table[var];
+			if (existing != "")
+				typeReturn = existing;
+			}
+			if (typeReturn == "")
+				ERROR("Variable Does Not Exists------->  "^exp);
+		   }
+	 typeReturn; 
+</xform>
+
+<*********************Symbol table insert********************************************************>
+
+<xform updateTable pars = (type, in, table, index, check)>
+	if (check == 1)
+	{
+		has = table[in ^ "-FunctionName-InnerIndex(" ^ index ^ ")-"];
+		if(has != "")
+		{
+			ERROR("Function Already Exists------>  "^in);		
+	        } 
+		else
+		{
+			table[in ^ "-FunctionName-InnerIndex(" ^ index ^ ")-"] = type;
+	        }
+	}
+	else 
+	{
+		has = table[in ^ "-InnerIndex(" ^ index ^ ")-"];
+		if(has != "")
+		{
+			ERROR("Variable Already Exists------>  "^in);		
+	        } 
+		else
+		{
+			table[in ^ "-InnerIndex(" ^ index ^ ")-"] = type;
+	        }
+	}
+</xform>
+
+<*********************Check array index***********************************************************>
+
+<xform updateDimension pars = (annot2, name, table, index, check)>
+	for (i =  annot2; i != ""; i = TAIL(i))
+	{
+		switch(HEAD(i))
+		{
+			case CODE.ArrayDim#(dim) :
+				type = typeChecking(dim, table, index, check);
+				if (type != "int")
+					ERROR("Array Index Cannot be a Floating Point Number");
+			default : 
+				updateDimension(HEAD(i), name, table, index, check);
+		}
+	}
+</xform>
+
+<*************************Process variable declaration**********************************************>
+
+<xform scanListVariables pars = (type, var, table, index, check)>
+	switch(var)
+	{
+		case CODE.VariableWithAnnot#(name, annot2):
+			updateTable(type, name, table, index, check);
+			updateDimension(annot2, name, table, index, check);
+		
+		default: 
+			updateTable(type, name, table, index, check);
+	}
+</xform>
+
+<********************************Function Parameter Insert********************************************>
+
+<xform scanList pars = (type, var, table, index, check)>
+	switch(var)
+	{
+		case CODE.VariableWithAnnot#(name, annot2):
+			has = table[check ^ "-Function-"name ^ "-InnerIndex(" ^ index ^ ")-"];
+			if(has != "")
+			{
+				ERROR("Variable Already Exists------>  "^name);		
+	        	} 
+			else
+			{
+				table[check ^ "-Function-"name ^ "-InnerIndex(" ^ index ^ ")-"] = type;
+	        	}
+		
+			default: 
+				"";
+	}
+</xform>
+<*************************Process every statements***************************************************>
+
+<xform scan pars = (ast, table, index, check)>
+	switch(ast)
+	{
+		case CODE.BaseTypeVarDeclStmt#(type, var) :
+			for (i = var; i != ""; i = TAIL(i))
+			{
+				scanListVariables(type, HEAD(i), table, index, check);
+			}
+
+		case CODE.VarDecl#(type, var) :
+			scanList(type, var, table, index, check);
+				                          
+		case CODE.StmtBlock#(stmt) :
+			for (i = stmt; i !=""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index + 1, check);
+			}
+
+		case CODE.Whilestmt#(headd, bodyd) :
+			check = "if";
+			scan(headd, table, index, check);
+			check = "";
+			scan(bodyd, table, index, check);
+
+		case CODE.Ifelsestmt#(head, body, nested) :
+			check = "if";
+			scan(head, table, index, check);
+			check = "";
+			scan(body, table, index, check);
+			scan(nested, table, index, check);
+			
+		case CODE.ExpStmt#(exp) :
+			number1 = typeChecking(exp, table, index, check);
+			if (check == "if" && number1 != "int")
+				ERROR ("Type Mismatch");
+						
+		case CODE.ExpStmts#(exp) :
+			number1 = typeChecking(exp, table, index, check);
+			if (check == "if" && number1 != "int")
+				ERROR ("Type Mismatch");
+		
+		case CODE.FunctionDefinition#(returntype, name, params, body, extra) :
+			updateTable(returntype, name, table, index + 1, 1);
+			scan(params, table, index + 1, name);
+			typeChecking(body, table, index + 1, check);
+			scanFirstStart(extra, table, index + 1, check);
+
+		case CODE.FunctionParameter#(content) :
+			for (i = content; i != ""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index, check);
+			}
+		default : 
+			 "";
+	}
+</xform>
+
+<***********************Start from this function*****************************************************>
+
+<xform scanFirstStart pars=(inputCode, table, index, check)> 
+	switch(inputCode)
+	{		
+		case CODE.FirstStart#(variable, stmt, f) :
+			for (i = variable; i != ""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index, check);
+			}
+			for (i = stmt; i != ""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index, check);
+			}
+			for (i = f; i != ""; i = TAIL(i))
+			{
+				scan(HEAD(i), table, index, check);
+			}
+	}
+</xform>
+
+<****************************Building Basic Block**********************************************>
+
+<code BasicBlock pars = (label, stmts)>
+@label@[@stmts@]
+</code>
+
+<xform BuildBasicBlocks pars = (input)>
+	blocks = MAP{};
+   	foreach (input : (cur = Whilestmt#(CLEAR headd, CLEAR bodyd)) : FALSE)
+	{ 
+		blocks[cur] = blocks[bodyd] = 1; 
+	}
+   	foreach (input : (cur = Ifelsestmt#(CLEAR head, CLEAR body, CLEAR nested)) : FALSE)
+	{ 
+		blocks[body] = blocks[nested] = 1; 
+	}
+   	start = "";
+	curBlock = ""; 
+	count = 0;
+   	foreach(input :  (cur=_) : FALSE)
+	{
+     		if(blocks[cur] == 1)
+		{
+        		if(curBlock != "")
+			{
+           			blocks[start] = BasicBlock#(count, ReverseList(curBlock));
+           			count = count + 1; 
+				curBlock = "";
+                        }
+        	start = cur; 
+                }
+     		<<*if (cur : WhileExp|ExpStmt) { curBlock = cur :: curBlock; }
+     		else{
+	     		curBlock = cur :: curBlock;
+                    }
+	}
+  	if(curBlock != "") 
+     		blocks[start] = BasicBlock#(count+1, curBlock);
+  	blocks
+</xform>
+
+<********************************Build CFG******************************************>
+
+<code GraphEdge pars = (from,to) >
+"@(from)@"->"@(to)@"
+</code>
+
+<code CFG pars = (label, flow : LIST(GraphEdge,"\n"))>
+digraph @label@
+{
+  @flow@
+}
+</code>
+
+<xform BuildCFG pars = (input, blocks) prev = "" edges = "">
+	cur = blocks[input]; 
+    	if (cur != "")
+	{ 
+		if (prev != "") 
+         		edges = GraphEdge#(prev,cur) :: edges;
+       		prev = cur;
+        }
+   	switch (input)
+	{
+    		case (first second) : 
+			(e1, b1) = BuildCFG(first,blocks);
+       			if (second != "")
+			{ 
+				BuildCFG[prev=b1;edges=e1](second,blocks)
+                        }
+       			else
+			{ 
+				(e1,b1) 
+			}
+
+    		case Whilestmt#(headd, bodyd):
+       			(e1,b1) = BuildCFG(bodyd, blocks);
+       			(GraphEdge#(b1,cur)::e1, b1)
+    		
+		case ExpStmt: (edges, prev)
+
+    		default: 
+		       foreach (input : (cur=_) : FALSE) 
+			{ <<* look inside?
+           	       		if (HEAD(cur) : ExpStmt|Whilestmt) 
+              			{ RETURN (BuildCFG[prev=""](cur,blocks)); }  <<* yes
+        		}
+       (edges,prev) <<* no need to look inside
+	}
+</xform>
+      
+<*********************************Data Flow Analysis******************************************************>
+
+<xform MapSuccessors pars = (cfgEdges)>
+	res = MAP(_,_);
+	foreach (cfgEdges : GraphEdge#(CLEAR from, CLEAR to) : TRUE)
+	{
+		res[from] = BuildList(to, res[from]);
+        }
+ 	res
+</xform>
+
+
+
+
+
+
